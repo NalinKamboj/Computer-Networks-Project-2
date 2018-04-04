@@ -1,0 +1,7 @@
+ROUTER SHORTEST_DISTANCE PREV_NODE
+A			8				B
+B			5				C
+C			2				D
+D			0				ÿ
+E			7				B
+F			10000				ÿ

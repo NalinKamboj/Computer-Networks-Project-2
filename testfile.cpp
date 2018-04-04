@@ -15,7 +15,7 @@
 #include <string.h>
 #include <vector>
 
-#define BUF_LEN 128
+#define BUF_LEN 256
 #define MAX_ROUTERS 6       //Hardcoded maximum number of routers on our network
 
 using namespace std;
@@ -36,6 +36,9 @@ void packetParser(char *);
 void printMenu();
 void initShutdown();        //for shutting down the router
 void BellmanFord(struct graph*, int);
+void printMenu();
+
+int menuStage;      //Global variable for storing what menu to print on the screen.
 
 struct DV {
     char node;
@@ -76,7 +79,8 @@ struct graph* maingraph;            //GRAPH FOR STORING ALL EDGES
 
 //GENERAL PACKET FORMAT - "DESTN:<DESTN>,SRC:<SRC>,FUNC:<FUNC>,TYPE:1/0,PORT:<PORT>,MSG:<MSG>"
 
-void packandsend(struct destinationRouter *destnR, int funcType, int type = 1, string message = "", struct edge *ed = NULL) {
+void packandsend(struct destinationRouter *destnR, int funcType, int type = 1, string message = "", struct edge *ed = NULL,
+int storeorsend = 0, char actualDestination = -1) {
     int sendLen = sizeof(struct sockaddr_in);
     int numBytes = 0;
     //string finalMessage = router1.src + message;
@@ -85,9 +89,11 @@ void packandsend(struct destinationRouter *destnR, int funcType, int type = 1, s
     string destn_s(1,destn);
     if(funcType == 1){
         if(type != 0)
-            finalMessage = "DESTN:"+destn_s+",SRC:"+router1.src+",FUNC:1,TYPE:1,PORT:"+to_string(router1.port)+",MSG:"+message;
+            finalMessage = "DESTN:"+destn_s+",SRC:"+router1.src+",FUNC:1,TYPE:1,PORT:"+to_string(router1.port)+",MSG:"+
+            message+","+destn_s;
         else{
-            finalMessage = "DESTN:"+destn_s+",SRC:"+router1.src+",FUNC:1,TYPE:0,PORT:"+to_string(router1.port)+",MSG:"+message;
+            finalMessage = "DESTN:"+destn_s+",SRC:"+router1.src+",FUNC:1,TYPE:0,PORT:"+to_string(router1.port)+",MSG:"+
+            message+","+destn_s;
 
         }
     }
@@ -99,10 +105,18 @@ void packandsend(struct destinationRouter *destnR, int funcType, int type = 1, s
         //cout<<finalMessage<<endl;
     }
     else if(funcType == 3) {
-        finalMessage = "DESTN:"+destn_s+",SRC:"+router1.src+",FUNC:3,TYPE1,PORT:"+to_string(router1.port)+",MSG:"+message;
+        if(storeorsend == 0)
+            finalMessage = "DESTN:"+destn_s+",SRC:"+router1.src+",FUNC:3,TYPE:1,PORT:"+to_string(router1.port)+
+            ",MSG:"+message+","+destn_s;
+        else {
+            cout<<"\nSTOREORSEND "<<storeorsend<<" DESTN: "<<actualDestination<<"\n";
+            finalMessage = "DESTN:"+destn_s+",SRC:"+router1.src+",FUNC:3,TYPE:1,PORT:"+to_string(router1.port)+
+            ",MSG:"+message+","+actualDestination;
+        }
     }
     else
         cout<<"\n\t\tSender: Wrong function type :( "<<endl;
+
     char sendBuf[(finalMessage.length())+1];
     strcpy(sendBuf, finalMessage.c_str());
     int sendSock = socket(AF_INET, SOCK_DGRAM, 0);
@@ -121,7 +135,7 @@ void packandsend(struct destinationRouter *destnR, int funcType, int type = 1, s
         return;
     }
     cout<<"\n\t\tSender: Message sent "<<numBytes<<" to "<<destnR->destn<<" on port "
-        << destnR->port <<" using port: "<<sendSock<<endl; 
+        << destnR->port <<" using port: "<<sendSock<<"\n"<<"\t\tMESSAGE: "<< sendBuf; 
     close(sendSock);   
 }
 
@@ -188,6 +202,7 @@ void insertEdge(struct graph* g, char x, char y, int w) {
             <<"->"<<g->edges[index]->v2<<" W: "<<g->edges[index]->weight;
         }
     }
+    cout<<"\n--------------------------------------------------------------------------\n";
     //sleep(2);
     //BellmanFord(maingraph, router1.src);
 }
@@ -222,6 +237,7 @@ void printArr()
     cout<<"\n\t---------------------------------------------------------\n";
 }
 
+void writeDVInfo();
 
 int main(int argc, char **argv){
     char buf[BUF_LEN];
@@ -334,7 +350,8 @@ void *router_connection(void *threadID) {
     }
 
     for(;;) {
-        cout<<"\n\tConnection: Router " << router1.src<<" listening on port " << router1.port<<"\n";
+        //cout<<"\n\tConnection: Router " << router1.src<<" listening on port " << router1.port<<"\n";
+        //printMenu();
         //cout<<"Gaandu!";
         recvLen = recvfrom(routerSock, recvBuf, BUF_LEN, 0, (struct sockaddr *) &senderAddr, &addrLen);
         cout<<"\n\tConnection: Received "<<recvLen<<" bytes.";
@@ -347,24 +364,28 @@ void *router_connection(void *threadID) {
 }
 
 void *data_sender(void *threadID) {
+    menuStage = 1;
     int threadNum;
     string temp;    //for storing message temporarily to pass to packandsend
     char destn;
     int type = -1;
     string message;
+    string finalMsg;
     threadNum = (intptr_t) threadID;
     int senderSock = -1;    //Not sending to any client initially.
     int response = 1;
     sleep(1.5);
     while(response) {
-        cout<<"\n\nMessenger: Enter the the destination (enter " << router1.src << " for router functions): ";
+        menuStage = 1;
+        cout<<"\n\nMESSENGER: Enter the the destination (enter " << router1.src << " for router functions): ";
         cin>>destn;
         //cout<<"\t"<<destn<<endl;
         struct edge *e1 = (struct edge*)malloc(sizeof(struct edge));
         struct destinationRouter destnR; 
         if(destn == router1.src) {
+            menuStage = 2;
             int ch;
-            cout<<"Messenger: 1 - Initialize Nodes, 2 - Shutdown, 3 - View Graph\t Enter choice: ";
+            cout<<"\nMESSENGER: 1 - Initialize Nodes, 2 - Shutdown, 3 - View Routing Table\t Enter choice: ";
             cin>>ch;
             switch(ch) {
                 case 1:
@@ -381,63 +402,69 @@ void *data_sender(void *threadID) {
                 case 2:
                     return 0;
                 case 3:
-                printGraph(maingraph);
+                printArr();
                 break;
                 default:
-                cout<<"\nMessenger: Wrong choice entered.";
+                cout<<"\n\nMESSENGER: Wrong choice entered.";
                 break;
             }
         }
         else {
-            cout<<"Messenger: Please enter message type (2 - Update Weight, 3 - Message): ";
-            cin>>type;
-            switch(type){
-                case 1:
-                for(int i = 0; i<MAX_ROUTERS; i++)
-                {
-                    destnR.destn = neighbors[i].src;
+            menuStage = 3;
+            cout<<"\nMESSENGER: Enter message for "<<destn<<": ";
+            cin.ignore();
+            getline(cin, message);
+            finalMsg = message + router1.src;
+            cout<<"MESSAGE TO BE SENT: "<<finalMsg;
+            int flag = 0;
+            for(int i = 0; i<router1.num_neighbors;i++) {
+                if(neighbors[i].src == destn) {
+                    destnR.destn = destn;
                     destnR.port = neighbors[i].port;
-                    packandsend(&destnR, type);
+                    flag = 1;
+                    packandsend(&destnR, 3, 1, finalMsg);
+                    break;
                 }
-                break;
-                case 2:
-                cout<<"Messenger: Enter the initial node: ";
-                cin.ignore();
-                cin>>e1->v1;
-                toupper(e1->v1);
-                cout<<"Messenger: Enter the ending node: ";
-                cin.ignore();
-                cin>>e1->v2;
-                toupper(e1->v2);
-                cout<<"Messenger: Enter the new weight of the edge: ";
-                cin.ignore();
-                cin>>e1->weight;
+            }
+            if(flag==1)
+                goto skip;
+            char prevNode;
+            if(flag == 0) {  //Router is not a neighbor, check if it exists in discovered routers
                 for(int i = 0; i<MAX_ROUTERS; i++) {
-                    if(neighbors[i].src == destn){
-                        destnR.port = neighbors[i].port;
-                        destnR.destn = destn;
-                        packandsend(&destnR, type, 1, "", e1);
-                    } 
-                }
-                break;
-                case 3:
-                cout<<"Messenger: Enter message for "<<destn<<": ";
-                cin.ignore();
-                getline(cin, message);
-                for(int i = 0; i<MAX_ROUTERS;i++) {
-                    if(neighbors[i].src == destn) {
-                        destnR.destn = destn;
-                        destnR.port = neighbors[i].port;
-                        packandsend(&destnR, type, 1, message);
+                    if(dvinfo[i].node == destn) {
+                        prevNode = dvinfo[i].nextNode;
+                        flag = 1;
                     }
                 }
-                break;
-                default:
-                cout<<"Messenger: Enter correct choice please. "<<endl;
-                break;
             }
+            if(flag == 1) { //Router exists in discoverd routers, now find the neighbor to which we need to transmit packet
+                for(int i = 0; i<router1.num_neighbors; i++) {
+                    if(prevNode == neighbors[i].src) {
+                        flag = 0;       //NEIGHBOR FOUND!
+                        destnR.destn = prevNode;
+                        destnR.port = neighbors[i].port;
+                        packandsend(&destnR, 3, 1, finalMsg, NULL, 1, destn);
+                        goto skip;
+                    }
+                }
+                while(flag){
+                    prevNode = dvinfo[prevNode%65].nextNode;
+                    for(int i = 0; i<router1.num_neighbors; i++) {
+                        if(prevNode == neighbors[i].src) {
+                            destnR.destn = prevNode;
+                            destnR.port = neighbors[i].port;
+                            packandsend(&destnR, 3, 1, finalMsg, NULL, 1, destn);
+                            flag = 0;       //NEIGHBOR FOUND!
+                            goto skip;
+                        }
+                    }
+                }
+                cout<<"\nMESSENGER: Packet forwarded to "<<prevNode << " for Router " << destn << "\n";
+            } else 
+                cout<<"\nMESSENGER: Router not found on network.\n";                
         }
         sleep(0.5);
+        skip:
         //cout<<"Messenger: You entered: \n\t\t"<<message<<endl;
         cout<<"\nMessenger: Do you want to continue? (1: yes, 0: shut down router): ";
         cin>>response;
@@ -445,9 +472,12 @@ void *data_sender(void *threadID) {
 }
 
 
-//GENERAL PACKET HEADER - "DESTN:<DESTN>,SRC:<SRC>,FUNC:<FUNC>,TYPE:1/0,PORT:<PORT>,MSG:<MSG>"
+//GENERAL PACKET HEADER - "DESTN:<DESTN>,SRC:<SRC>,FUNC:<FUNC>,TYPE:1/0,PORT:<PORT>,MSG:<MSG>,<ACTUALDESTN>*"
+// * - optional (only required is packet is to be forwarded to another router)
 void packetParser(char *buf) {
-    cout<<"\n\t\tMessage received!\n\t"<< buf;
+    cout<<"\n- - - - - - - - - - - - - - - - - - - - - -\n";
+    cout<<"\n\t\tRECEIVED MESSAGE: \n\t"<<buf;
+    cout<<"\n- - - - - - - - - - - - - - - - - - - - - -\n";
     //All these varaiables will always be found at these pos due to structure of packet
     char originalsrc = buf[12];
     char destn = buf[6];
@@ -459,79 +489,195 @@ void packetParser(char *buf) {
     int funcType = buf[19] - '0';  
     struct destinationRouter DR;
     string message;
-    switch(funcType) {
-        case 1:
-        //Send back info of all my neighbors to the src with type - 0 (reply/ack)
-        if(type == 1) {
-            for(int i = 0; i<router1.num_neighbors; i++) {
-                char src = neighbors[i].src;
-                string src_s(1, src);
-                if(neighbors[i].src != -1){
-                    message = "N" + to_string(i+1) + "-" + src_s + ",W" + to_string(i+1) + "-"
-                    + to_string(neighbors[i].weight)+",P-"+to_string(neighbors[i].port);
-                    //cout<<"\t\t"<<message<<endl;
-                    DR.destn = originalsrc;
-                    DR.port = port_i;
-                    packandsend(&DR, funcType, 0, message);     //Replying with my router's neighbor info
-                }
-            }
-        }else if(type == 0){
-            int w,index = -1;
-            int flag = 0;
-            int port_y;
-            char y;
-            for(int i = 0; i<6;i++) {         //Data after 6th : contains the message containing neighbor info
+
+    int index = 0;
+    char actualDestn;
+    if(type == 1) {
+        for(int i = 0; i<6;i++) {         //After 6th comma is the actual destination of the packet
+            index++;
+            while(buf[index]!=',')
                 index++;
-                while(buf[index]!=':')
+        }
+    }
+    else{
+        for(int i = 0; i<8;i++) {         //After 8th comma is the actual destination of the packet
+            index++;
+            while(buf[index]!=',')
+                index++;
+        }
+    }
+    index++;        //Finally the buffer seeker is referring to the <ACTUALDESTN> part of the packet
+    actualDestn = buf[index];
+    //cout<<"\n\nPARSER: ACTUAL DESTINATION: "<<actualDestn;
+
+
+    if(actualDestn == router1.src) { //Check if packet is for our router or meant to be passed on....
+        switch(funcType) {
+            case 1:
+            //Send back info of all my neighbors to the src with type - 0 (reply/ack)
+            if(type == 1) {
+                for(int i = 0; i<router1.num_neighbors; i++) {
+                    char src = neighbors[i].src;
+                    string src_s(1, src);
+                    if(neighbors[i].src != -1){
+                        message = "N" + to_string(i+1) + "-" + src_s + ",W" + to_string(i+1) + "-"
+                        + to_string(neighbors[i].weight)+",P-"+to_string(neighbors[i].port);
+                        //cout<<"\t\t"<<message<<endl;
+                        DR.destn = originalsrc;
+                        DR.port = port_i;
+                        packandsend(&DR, funcType, 0, message);     //Replying with my router's neighbor info
+                    }
+                }
+            }else if(type == 0){
+                int w,index = -1;
+                int flag = 0;
+                int port_y;
+                char y;
+                for(int i = 0; i<6;i++) {         //Data after 6th : contains the message containing neighbor info
+                    index++;
+                    while(buf[index]!=':')
+                        index++;
+                }
+                index+=4;
+                y = buf[index];
+                index+=5;
+                w = buf[index] - '0';
+                index+=4;
+                char yport[5];
+                for(int i = 0; i<5;i++)
+                    yport[i] = buf[index+i];
+                port_y = atoi(yport);
+                
+                //Check if the vertex is already discovered. If not, add it to the list of DISCOVERED ROUTERS
+                if (y == router1.src)
+                    flag = 1;
+
+                if(flag == 0) {
+                    for(int i = 0; i<router1.num_neighbors ;i++) {
+                        if(y == neighbors[i].src)
+                            flag = 1;
+                    }
+                }
+                if(flag == 0){
+                    for(int i = 0; i<discRouters.size();i++)
+                        if(discRouters[i]->src == y)
+                            flag = 1;
+                }
+                //If flag = 0, it means the node sending this DV is new!
+                if(flag == 0) {
+                    discoveredRouters *node = (struct discoveredRouters*) malloc(sizeof(struct discoveredRouters));
+                    node->src = y;
+                    node->port = port_i;
+                    discRouters.push_back(node);
+                    cout<<"\n\n\t---------------------------------";
+                    cout<<"\n\t| Discovered new node: "<<node->src<<"\t|";
+                    cout<<"\n\t---------------------------------\n";
+                    DR.destn = y;
+                    DR.port = port_y;
+                    packandsend(&DR, funcType, 1);  //Ask the newly discovered node for its neighbors.
+                }
+
+                insertEdge(maingraph, originalsrc, y, w);
+                BellmanFord(maingraph, (int)router1.src);
+            }
+            break;
+
+            case 2:
+            break;
+
+            case 3:
+            int index, ind1, ind2;
+            for(int i = 0; i<6; i++) {
+                index++;
+                while(buf[index] != ',')
                     index++;
             }
-            index+=4;
-            y = buf[index];
-            index+=5;
-            w = buf[index] - '0';
-            index+=4;
-            char yport[5];
-            for(int i = 0; i<5;i++)
-                yport[i] = buf[index+i];
-            port_y = atoi(yport);
-            
-            //Check if the vertex is already discovered. If not, add it to the list of DISCOVERED ROUTERS
-            if (y == router1.src)
-                flag == 1;
+            index--;
+            cout<<"\n-----------------------------------------------------------------------\n";
+            cout<<"\n\t\tMessage from " << buf[index] << ": \n\t\t"<<buf<<"\n\n";  
+            cout<<"\n-----------------------------------------------------------------------\n";
+            printMenu();
+            break;
+        }
+    } else {        //Passing on the packet...
+        int flag = 0;
+        int ind1, ind2;
+        ind1 = 0;
+        for(int i = 0; i<6; i++) {
+            ind1++;
+            while(buf[ind1] != ':')
+                ind1++;
+        }
+        ind1++;
+        ind2 = index-1;
 
-            if(flag == 0) {
-                for(int i = 0; i<router1.num_neighbors ;i++) {
-                    if(y == neighbors[i].src)
-                        flag = 1;
+        cout<<"\n- - - - - - - - - - - - - - - - - - - - - -\n";   
+        cout<<"\n\t\tINSIDE ELSE: \n\t"<<actualDestn;
+        cout<<"\n- - - - - - - - - - - - - - - - - - - - - -\n";
+
+        string tempMessage(buf+ind1, buf+ind2);
+        for(int i = 0; i<router1.num_neighbors;i++) {
+            if(neighbors[i].src == actualDestn) {
+                DR.destn = actualDestn;
+                DR.port = neighbors[i].port;
+                flag = 1;
+                packandsend(&DR, 3, 1, tempMessage);
+                cout<<"\nParser: Message sent to neighbor "<<actualDestn<<"\n";
+                break;
+            }
+        }
+
+        cout<<"\n- - - - - - - - - - - - - - - - - - - - - -\n";   
+        cout<<"\n\t\tPAST NEIGHBOR LOOP "<<actualDestn;
+        cout<<"\n- - - - - - - - - - - - - - - - - - - - - -\n";
+
+        char prevNode;
+        if(flag == 1)
+            goto parserSkip;
+
+        if(flag == 0) {  //Router is not a neighbor, check if it exists in discovered routers
+            for(int i = 0; i<MAX_ROUTERS; i++) {
+                if(dvinfo[i].node == actualDestn) {
+                    prevNode = dvinfo[i].nextNode;
+                    flag = 1;
                 }
             }
-            if(flag == 0){
-                for(int i = 0; i<discRouters.size();i++)
-                    if(discRouters[i]->src == y)
-                        flag = 1;
-            }
-            //If flag = 0, it means the node sending this DV is new!
-            if(flag == 0) {
-                discoveredRouters *node = (struct discoveredRouters*) malloc(sizeof(struct discoveredRouters));
-                node->src = y;
-                node->port = port_i;
-                discRouters.push_back(node);
-                cout<<"\nDiscovered new node: "<<node->src<<"\n";
-                DR.destn = y;
-                DR.port = port_y;
-                packandsend(&DR, funcType, 1);  //Ask the newly discovered node for its neighbors.
-            }
-
-            insertEdge(maingraph, originalsrc, y, w);
-            BellmanFord(maingraph, (int)router1.src);
         }
-        break;
-        case 2:
-        break;
-        case 3:
-        cout<<"\n\t\tMessage from " << originalsrc << ": \n\t\t"<<buf<<"\n"<<endl;  
-        break;
+
+        cout<<"\n- - - - - - - - - - - - - - - - - - - - - -\n";   
+        cout<<"\n\t\tDISCOVERED NODE!\t"<<prevNode;
+        cout<<"\n- - - - - - - - - - - - - - - - - - - - - -\n";
+
+        if(flag == 1) {      //Router exists in discoverd routers, now find the neighbor to which we need to transmit packet
+            for(int i = 0; i<router1.num_neighbors; i++) {
+                if(prevNode == neighbors[i].src) {
+                    flag = 0;       //NEIGHBOR FOUND!
+                    DR.destn = prevNode;
+                    DR.port = neighbors[i].port;
+                    packandsend(&DR, 3, 1, tempMessage, NULL, 1, actualDestn);
+                    cout<<"\n- - - - - - - - - - - - - - - - - - - - - -\n";   
+                    cout<<"\n\t\tSENDING TO NEIGHBOR C? \n\t"<<actualDestn;
+                    cout<<"\n- - - - - - - - - - - - - - - - - - - - - -\n";
+                    goto parserSkip;
+                }
+            }
+            while(flag){
+                prevNode = dvinfo[prevNode%65].nextNode;
+                for(int i = 0; i<router1.num_neighbors; i++) {
+                    if(prevNode == neighbors[i].src) {
+                        DR.destn = prevNode;
+                        DR.port = neighbors[i].port;
+                        packandsend(&DR, 3, 1, tempMessage, NULL, 1, actualDestn);
+                        flag = 0;       //NEIGHBOR FOUND!
+                        goto parserSkip;
+                    }
+                }
+            }
+            cout<<"\nMESSENGER: Packet forwarded to "<<prevNode << " for Router " << actualDestn<<"\n";
+        } else cout<<"\nMESSENGER: Router not found on network. :(\n";
     }
+    parserSkip:
+    printMenu();
 }
 
 void BellmanFord(struct graph* g, int src)      //char src **
@@ -585,6 +731,43 @@ void BellmanFord(struct graph* g, int src)      //char src **
     } 
     */
     //printArr(dist); 
-    printArr();
+    //printArr();
+    cout<<"\nRouting table regenerated.\n";
+    cout<<"\n----------------------------------------------------------------------------------\n";
+    writeDVInfo();
     return;
+}
+
+void printMenu() {
+    switch(menuStage) {
+        case 1:
+        cout<<"\n\nMESSENGER: Enter the the destination (enter " << router1.src << " for router functions): ";
+        break;
+
+        case 2:
+        cout<<"\nMESSENGER: 1 - Initialize Nodes, 2 - Shutdown, 3 - View Routing Table\t Enter choice: ";
+        break;
+        
+        case 3:
+        cout<<"\nMESSENGER: Enter message for router: ";
+        break;
+    }
+}
+
+void writeDVInfo() {
+    string src(1, router1.src);
+    string fileName = src+"_table.txt";
+    ofstream newFile(fileName);
+    if(newFile.is_open()) {
+        newFile<<"ROUTER SHORTEST_DISTANCE PREV_NODE\n";
+        for(int i = 0; i<MAX_ROUTERS; i++){
+            if(dvinfo[i].node!=-1) {
+                newFile << dvinfo[i].node<<"\t\t\t"<< dvinfo[i].shortestDist << "\t\t\t\t" << dvinfo[i].nextNode << "\n";
+            }
+        }
+    }
+    else {
+        cout<<"\n-----------------------------------------------------------------------------\nFILE WRITER: Couldn't open file";
+        cout<<"\n-----------------------------------------------------------------------------\n";
+    }
 }

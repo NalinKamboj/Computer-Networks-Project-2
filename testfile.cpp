@@ -38,12 +38,11 @@ void initShutdown();        //for shutting down the router
 void BellmanFord(struct graph*, int);
 
 struct DV {
-    char dest;
-    int port;
+    char node;
+    //int port;
     int shortestDist;
     char nextNode;
-};
-vector<struct DV*> dvData;
+}dvinfo[MAX_ROUTERS];
 
 struct routerData {     //MY ROUTER'S data
     char src;
@@ -161,10 +160,10 @@ void insertEdge(struct graph* g, char x, char y, int w) {
         for(int i = 0; i<g->edges.size(); i++){     //Check if given edge already exists in graph
             if(g->edges[i]->v1 == x) {
                 if(g->edges[i]->v2 == y) {
-                    cout<<"\t\t\tGRAPHER: Edge already exists."<<endl;
+                    cout<<"\n\t\t\tGRAPHER: Edge already exists."<<endl;
                     flag = 1;
                     if(g->edges[i]->weight != w) {
-                        cout<<"\t\t\tGRAPHER: Updating weight..."<<endl;
+                        cout<<"\n\t\t\tGRAPHER: Updating weight..."<<endl;
                         g->edges[i]->weight = w;
                         flag = 1;
                     }
@@ -201,8 +200,9 @@ struct discoveredRouters {
 vector<struct discoveredRouters*> discRouters;
 
 // A utility function used to print the solution
-void printArr(int dist[])
+void printArr()
 {
+    /*
     //cout<<"\nN: "<<n;
     cout<<"\n\t---------------------------------\n\t| Vertex   Distance from Source |";
     for (int i = 0; i < MAX_ROUTERS; ++i) {
@@ -210,6 +210,16 @@ void printArr(int dist[])
         cout<<"\n\t| "<<ch<<"\t\t  "<<dist[i]<<"\t\t|";
     }
     cout<<"\n\t---------------------------------\n";
+    */
+    cout<<"\n\t---------------------------------------------------------\n\t| Vertex\tDistance from Source\tPrevious Node\t|";
+    for (int i = 0; i < MAX_ROUTERS; ++i) {
+        char ch = (char)(i+65);
+        if(dvinfo[i].nextNode == -1)
+            cout<<"\n\t| "<<dvinfo[i].node<<"\t\t\t"<<dvinfo[i].shortestDist<<"\t\t\t\t|";
+        else    
+            cout<<"\n\t| "<<dvinfo[i].node<<"\t\t\t"<<dvinfo[i].shortestDist<<"\t\t\t"<< dvinfo[i].nextNode << "\t|";
+    }
+    cout<<"\n\t---------------------------------------------------------\n";
 }
 
 
@@ -324,7 +334,7 @@ void *router_connection(void *threadID) {
     }
 
     for(;;) {
-        cout<<"\n\tConnection: Router " << router1.src<<" listening on port " << router1.port;
+        cout<<"\n\tConnection: Router " << router1.src<<" listening on port " << router1.port<<"\n";
         //cout<<"Gaandu!";
         recvLen = recvfrom(routerSock, recvBuf, BUF_LEN, 0, (struct sockaddr *) &senderAddr, &addrLen);
         cout<<"\n\tConnection: Received "<<recvLen<<" bytes.";
@@ -453,13 +463,7 @@ void packetParser(char *buf) {
         case 1:
         //Send back info of all my neighbors to the src with type - 0 (reply/ack)
         if(type == 1) {
-            for(int i = 0; i<router1.num_neighbors; i++) {    
-                //First forward the same packet to other neighbors as well so that even they can send their neighbor data    
-                //buf[12] = router1.src;
-                //DR.destn = neighbors[i].src;      
-                //DR.port = neighbors[i].port;
-                //if((DR.destn != originalsrc) && (DR.destn != router1.src))
-                    //packandsend(&DR, 1, 1, buf);
+            for(int i = 0; i<router1.num_neighbors; i++) {
                 char src = neighbors[i].src;
                 string src_s(1, src);
                 if(neighbors[i].src != -1){
@@ -490,30 +494,8 @@ void packetParser(char *buf) {
             for(int i = 0; i<5;i++)
                 yport[i] = buf[index+i];
             port_y = atoi(yport);
-            /*
-            for(int i = 0;i<router1.num_neighbors;i++) {
-                if(originalsrc == neighbors[i].src)
-                    flag = 1;
-            }
-            if(flag == 0){
-                for(int i = 0; i<discRouters.size();i++)
-                    if(discRouters[i]->src == originalsrc)
-                        flag = 1;
-            }
-            //If flag = 0, it means the node sending this DV is new!
-            if(flag == 0) {
-                discoveredRouters *node = (struct discoveredRouters*) malloc(sizeof(struct discoveredRouters));
-                node->src = originalsrc;
-                node->port = port_i;
-                discRouters.push_back(node);
-                cout<<"\nDiscovered new node: "<<node->src;
-                DR.destn = originalsrc;
-                DR.port = port_i;
-                packandsend(&DR, funcType, 1);  //Ask the newly discovered node for its neighbors.
-            }            
-            flag = 0;
-            */
-            //Repeat the same for the other vertex, i.e Y
+            
+            //Check if the vertex is already discovered. If not, add it to the list of DISCOVERED ROUTERS
             if (y == router1.src)
                 flag == 1;
 
@@ -556,13 +538,19 @@ void BellmanFord(struct graph* g, int src)      //char src **
 {
     int V = g->V;
     int E = g->E;
-    int dist[MAX_ROUTERS];
+    //int dist[MAX_ROUTERS];
     
     // Step 1: Initialize distances from src to all other vertices
     // as INFINITE
     for (int i = 0; i < MAX_ROUTERS; i++)
-        dist[i] = 10000;
-    dist[src-65] = 0;       //Assuming A is first vertex and so on...
+    {
+        dvinfo[i].node = (char) (i+65);
+        dvinfo[i].shortestDist = 10000;
+        dvinfo[i].nextNode = -1;
+    }
+        //dist[i] = 10000;
+    //dist[src%65] = 0;       //Assuming A is first vertex and so on...
+    dvinfo[src%65].shortestDist = 0;
 
     // Step 2: Relax all edges |V| - 1 times. A simple shortest 
     // path from src to any other vertex can have at-most |V| - 1 
@@ -574,10 +562,15 @@ void BellmanFord(struct graph* g, int src)      //char src **
             int u = g->edges[j]->v1;
             int v = g->edges[j]->v2;
             int weight = g->edges[j]->weight;
-            if (dist[u-65] != 1000 && dist[u-65] + weight < dist[v-65])
-                dist[v-65] = dist[u-65] + weight;
+            //if (dist[u-65] != 10000 && dist[u-65] + weight < dist[v-65])
+            //    dist[v-65] = dist[u-65] + weight;
+            if(dvinfo[u%65].shortestDist != 10000 && dvinfo[u%65].shortestDist + weight < dvinfo[v%65].shortestDist) {
+                dvinfo[v%65].shortestDist = dvinfo[u%65].shortestDist + weight;
+                dvinfo[v%65].nextNode = dvinfo[u%65].node;
+            }
         }
     } 
+    /*
     // Step 3: check for negative-weight cycles.  The above step 
     // guarantees shortest distances if graph doesn't contain 
     // negative weight cycle.  If we get a shorter path, then there
@@ -587,9 +580,11 @@ void BellmanFord(struct graph* g, int src)      //char src **
         int u = g->edges[i]->v1;
         int v = g->edges[i]->v2;
         int weight = g->edges[i]->weight;
-        if (dist[u] != 10000 && dist[u] + weight < dist[v])
-            printf("Graph contains negative weight cycle");
+        if (dist[u] != 10000 && dist[v] != 10000 && dist[u] + weight < dist[v])
+            cout<<"\n\t\t\tGRAPHER: Graph contains negative weight cycle\n";
     } 
-    printArr(dist); 
+    */
+    //printArr(dist); 
+    printArr();
     return;
 }

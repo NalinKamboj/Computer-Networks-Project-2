@@ -103,7 +103,7 @@ void packandsend(struct destinationRouter *destnR, int funcType, int type = 1, s
         finalMessage = "DESTN:"+destn_s+",SRC:"+router1.src+",FUNC:3,TYPE1,PORT:"+to_string(router1.port)+",MSG:"+message;
     }
     else
-        cout<<"\t\tSender: Wrong function type :( "<<endl;
+        cout<<"\n\t\tSender: Wrong function type :( "<<endl;
     char sendBuf[(finalMessage.length())+1];
     strcpy(sendBuf, finalMessage.c_str());
     int sendSock = socket(AF_INET, SOCK_DGRAM, 0);
@@ -118,10 +118,10 @@ void packandsend(struct destinationRouter *destnR, int funcType, int type = 1, s
     bind(sendSock, (struct sockaddr *) &addrSend, sizeof(addrSend));     //Not checking failure for now..
     //    cout<<"\n\t\t BIND FAIL";    
     if((numBytes=(sendto(sendSock, sendBuf, strlen(sendBuf), 0, (struct sockaddr *) &addrSend, sendLen))) == -1) {
-        cout<<"\t\tSender: Couldn't send. :("<<endl;
+        cout<<"\n\t\tSender: Couldn't send. :("<<endl;
         return;
     }
-    cout<<"\t\tSender: Message sent "<<numBytes<<" to "<<destnR->destn<<" on port "
+    cout<<"\n\t\tSender: Message sent "<<numBytes<<" to "<<destnR->destn<<" on port "
         << destnR->port <<" using port: "<<sendSock<<endl; 
     close(sendSock);   
 }
@@ -193,6 +193,12 @@ void insertEdge(struct graph* g, char x, char y, int w) {
     //BellmanFord(maingraph, router1.src);
 }
 
+struct discoveredRouters {
+    char src;
+    int port;
+};
+
+vector<struct discoveredRouters*> discRouters;
 
 // A utility function used to print the solution
 void printArr(int dist[])
@@ -447,12 +453,18 @@ void packetParser(char *buf) {
         case 1:
         //Send back info of all my neighbors to the src with type - 0 (reply/ack)
         if(type == 1) {
-            for(int i = 0; i<MAX_ROUTERS; i++) {
+            for(int i = 0; i<router1.num_neighbors; i++) {    
+                //First forward the same packet to other neighbors as well so that even they can send their neighbor data    
+                //buf[12] = router1.src;
+                //DR.destn = neighbors[i].src;      
+                //DR.port = neighbors[i].port;
+                //if((DR.destn != originalsrc) && (DR.destn != router1.src))
+                    //packandsend(&DR, 1, 1, buf);
                 char src = neighbors[i].src;
                 string src_s(1, src);
                 if(neighbors[i].src != -1){
                     message = "N" + to_string(i+1) + "-" + src_s + ",W" + to_string(i+1) + "-"
-                    + to_string(neighbors[i].weight);
+                    + to_string(neighbors[i].weight)+",P-"+to_string(neighbors[i].port);
                     //cout<<"\t\t"<<message<<endl;
                     DR.destn = originalsrc;
                     DR.port = port_i;
@@ -461,7 +473,9 @@ void packetParser(char *buf) {
             }
         }else if(type == 0){
             int w,index = -1;
-            char x, y;
+            int flag = 0;
+            int port_y;
+            char y;
             for(int i = 0; i<6;i++) {         //Data after 6th : contains the message containing neighbor info
                 index++;
                 while(buf[index]!=':')
@@ -471,6 +485,61 @@ void packetParser(char *buf) {
             y = buf[index];
             index+=5;
             w = buf[index] - '0';
+            index+=4;
+            char yport[5];
+            for(int i = 0; i<5;i++)
+                yport[i] = buf[index+i];
+            port_y = atoi(yport);
+            /*
+            for(int i = 0;i<router1.num_neighbors;i++) {
+                if(originalsrc == neighbors[i].src)
+                    flag = 1;
+            }
+            if(flag == 0){
+                for(int i = 0; i<discRouters.size();i++)
+                    if(discRouters[i]->src == originalsrc)
+                        flag = 1;
+            }
+            //If flag = 0, it means the node sending this DV is new!
+            if(flag == 0) {
+                discoveredRouters *node = (struct discoveredRouters*) malloc(sizeof(struct discoveredRouters));
+                node->src = originalsrc;
+                node->port = port_i;
+                discRouters.push_back(node);
+                cout<<"\nDiscovered new node: "<<node->src;
+                DR.destn = originalsrc;
+                DR.port = port_i;
+                packandsend(&DR, funcType, 1);  //Ask the newly discovered node for its neighbors.
+            }            
+            flag = 0;
+            */
+            //Repeat the same for the other vertex, i.e Y
+            if (y == router1.src)
+                flag == 1;
+
+            if(flag == 0) {
+                for(int i = 0; i<router1.num_neighbors ;i++) {
+                    if(y == neighbors[i].src)
+                        flag = 1;
+                }
+            }
+            if(flag == 0){
+                for(int i = 0; i<discRouters.size();i++)
+                    if(discRouters[i]->src == y)
+                        flag = 1;
+            }
+            //If flag = 0, it means the node sending this DV is new!
+            if(flag == 0) {
+                discoveredRouters *node = (struct discoveredRouters*) malloc(sizeof(struct discoveredRouters));
+                node->src = y;
+                node->port = port_i;
+                discRouters.push_back(node);
+                cout<<"\nDiscovered new node: "<<node->src<<"\n";
+                DR.destn = y;
+                DR.port = port_y;
+                packandsend(&DR, funcType, 1);  //Ask the newly discovered node for its neighbors.
+            }
+
             insertEdge(maingraph, originalsrc, y, w);
             BellmanFord(maingraph, (int)router1.src);
         }

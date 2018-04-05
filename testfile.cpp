@@ -16,7 +16,7 @@
 #include <vector>
 
 #define BUF_LEN 256
-#define MAX_ROUTERS 6       //Hardcoded maximum number of routers on our network
+#define MAX_ROUTERS 8       //Hardcoded maximum number of routers on our network
 
 using namespace std;
 
@@ -24,9 +24,8 @@ using namespace std;
 GENERAL PACKET HEADER - "DESTN:<DESTN>,SRC:<SRC>,FUNC:<FUNC>,TYPE:1/0,MSG:<MSG>"
 TYPE: Referes to whether the packet is a reply or a request
 FUNCTIONS:  1 - Initial set-up (pinging nodes for obtaining their neighbor information)
-            2 - Update weights
+            2 - Update weights (NOT IMPLEMENTED)
             3 - Normal messenger
-            4 - SRC node shutting down
 */
 
 //Necessary function signatures
@@ -34,9 +33,9 @@ void *router_connection(void *threadID);
 void *data_sender(void *threadID);
 void packetParser(char *);
 void printMenu();
-void initShutdown();        //for shutting down the router
 void BellmanFord(struct graph*, int);
 void printMenu();
+void writeDVInfo();
 
 int menuStage;      //Global variable for storing what menu to print on the screen.
 
@@ -237,8 +236,6 @@ void printArr()
     cout<<"\n\t---------------------------------------------------------\n";
 }
 
-void writeDVInfo();
-
 int main(int argc, char **argv){
     char buf[BUF_LEN];
     pthread_t connection_thread, sender_thread;
@@ -279,13 +276,7 @@ int main(int argc, char **argv){
                 router1.num_neighbors++;
                 initFile>>neighbors[router1.num_neighbors-1].src>>neighbors[router1.num_neighbors-1].port
                 >>neighbors[router1.num_neighbors-1].weight;
-                //cout<<neighbors[router1.num_neighbors-1].src<<endl;
-                //cout<<neighbors[router1.num_neighbors-1].port<<endl;
-                //cout<<neighbors[router1.num_neighbors-1].weight<<endl;
             } else {
-                //int temp;
-                //initFile>>c;
-                //initFile>>temp;
                 initFile.getline(buf, BUF_LEN);
                 memset(buf, 0, BUF_LEN);
             }
@@ -312,13 +303,10 @@ int main(int argc, char **argv){
     cout<<"\nMain: Now attempting to setup the connection..."<<endl;
     int i = 1;
     void *status;
-    //pthread_attr_init(&senderAttr);
-    //pthread_attr_setdetachstate(&senderAttr, PTHREAD_CREATE_JOINABLE);
     pthread_create(&connection_thread, NULL, router_connection, (void *) i);
     pthread_create(&sender_thread, NULL, data_sender, (void *) (i+1));
     pthread_join(sender_thread, &status);       //we dont care about status, for now.
     pthread_cancel(connection_thread);
-    //pthread_join(connection_thread, &status);
     cout<<"\nMain: All threads closed, shutting down node..."<<endl;
     return 0;
 }
@@ -350,9 +338,6 @@ void *router_connection(void *threadID) {
     }
 
     for(;;) {
-        //cout<<"\n\tConnection: Router " << router1.src<<" listening on port " << router1.port<<"\n";
-        //printMenu();
-        //cout<<"Gaandu!";
         recvLen = recvfrom(routerSock, recvBuf, BUF_LEN, 0, (struct sockaddr *) &senderAddr, &addrLen);
         cout<<"\n\tConnection: Received "<<recvLen<<" bytes.";
         if(recvLen > 0) {
@@ -385,7 +370,8 @@ void *data_sender(void *threadID) {
         if(destn == router1.src) {
             menuStage = 2;
             int ch;
-            cout<<"\nMESSENGER: 1 - Initialize Nodes, 2 - Shutdown, 3 - View Routing Table\t Enter choice: ";
+            cout<<"\n----------------------------------------------------------------------------";
+            cout<<"\nMESSENGER: 1 - Initialize Nodes, 2 - Shutdown, 3 - View Routing Table\n\t Enter choice: ";
             cin>>ch;
             switch(ch) {
                 case 1:
@@ -399,8 +385,22 @@ void *data_sender(void *threadID) {
                     }
                 }
                 break;
+                
                 case 2:
-                    return 0;
+                pthread_exit(NULL);
+                /*
+                for(int i=0; i<router1.num_neighbors; i++){     //Update all neighbors about router shutdown
+                    destnR.destn = neighbors[i].src;
+                    destnR.port = neighbors[i].port;
+                    packandsend(&destnR, 5);
+                }
+                for(int i =0; i<MAX_ROUTERS; i++){
+                    if(dvinfo[i].node != -1){
+                        destnR.destn = dvinfo[i].node;
+                    }
+                }*/
+                break;
+
                 case 3:
                 printArr();
                 break;
@@ -508,7 +508,6 @@ void packetParser(char *buf) {
     }
     index++;        //Finally the buffer seeker is referring to the <ACTUALDESTN> part of the packet
     actualDestn = buf[index];
-    //cout<<"\n\nPARSER: ACTUAL DESTINATION: "<<actualDestn;
 
 
     if(actualDestn == router1.src) { //Check if packet is for our router or meant to be passed on....
@@ -596,7 +595,7 @@ void packetParser(char *buf) {
             cout<<"\n-----------------------------------------------------------------------\n";
             cout<<"\n\t\tMessage from " << buf[index] << ": \n\t\t"<<buf<<"\n\n";  
             cout<<"\n-----------------------------------------------------------------------\n";
-            printMenu();
+            //printMenu();
             break;
         }
     } else {        //Passing on the packet...
@@ -611,10 +610,6 @@ void packetParser(char *buf) {
         ind1++;
         ind2 = index-1;
 
-        cout<<"\n- - - - - - - - - - - - - - - - - - - - - -\n";   
-        cout<<"\n\t\tINSIDE ELSE: \n\t"<<actualDestn;
-        cout<<"\n- - - - - - - - - - - - - - - - - - - - - -\n";
-
         string tempMessage(buf+ind1, buf+ind2);
         for(int i = 0; i<router1.num_neighbors;i++) {
             if(neighbors[i].src == actualDestn) {
@@ -626,10 +621,6 @@ void packetParser(char *buf) {
                 break;
             }
         }
-
-        cout<<"\n- - - - - - - - - - - - - - - - - - - - - -\n";   
-        cout<<"\n\t\tPAST NEIGHBOR LOOP "<<actualDestn;
-        cout<<"\n- - - - - - - - - - - - - - - - - - - - - -\n";
 
         char prevNode;
         if(flag == 1)
@@ -644,9 +635,6 @@ void packetParser(char *buf) {
             }
         }
 
-        cout<<"\n- - - - - - - - - - - - - - - - - - - - - -\n";   
-        cout<<"\n\t\tDISCOVERED NODE!\t"<<prevNode;
-        cout<<"\n- - - - - - - - - - - - - - - - - - - - - -\n";
 
         if(flag == 1) {      //Router exists in discoverd routers, now find the neighbor to which we need to transmit packet
             for(int i = 0; i<router1.num_neighbors; i++) {
@@ -655,9 +643,6 @@ void packetParser(char *buf) {
                     DR.destn = prevNode;
                     DR.port = neighbors[i].port;
                     packandsend(&DR, 3, 1, tempMessage, NULL, 1, actualDestn);
-                    cout<<"\n- - - - - - - - - - - - - - - - - - - - - -\n";   
-                    cout<<"\n\t\tSENDING TO NEIGHBOR C? \n\t"<<actualDestn;
-                    cout<<"\n- - - - - - - - - - - - - - - - - - - - - -\n";
                     goto parserSkip;
                 }
             }
@@ -680,11 +665,10 @@ void packetParser(char *buf) {
     printMenu();
 }
 
-void BellmanFord(struct graph* g, int src)      //char src **
+void BellmanFord(struct graph* g, int src)    
 {
     int V = g->V;
     int E = g->E;
-    //int dist[MAX_ROUTERS];
     
     // Step 1: Initialize distances from src to all other vertices
     // as INFINITE
@@ -694,13 +678,11 @@ void BellmanFord(struct graph* g, int src)      //char src **
         dvinfo[i].shortestDist = 10000;
         dvinfo[i].nextNode = -1;
     }
-        //dist[i] = 10000;
-    //dist[src%65] = 0;       //Assuming A is first vertex and so on...
+    
+    //Assuming A is first vertex and so on...
     dvinfo[src%65].shortestDist = 0;
 
-    // Step 2: Relax all edges |V| - 1 times. A simple shortest 
-    // path from src to any other vertex can have at-most |V| - 1 
-    // edges
+    // Step 2: Relax all edges |V| - 1 times.
     for (int i = 1; i <= V-1; i++)
     {
         for (int j = 0; j < E; j++)
@@ -716,22 +698,6 @@ void BellmanFord(struct graph* g, int src)      //char src **
             }
         }
     } 
-    /*
-    // Step 3: check for negative-weight cycles.  The above step 
-    // guarantees shortest distances if graph doesn't contain 
-    // negative weight cycle.  If we get a shorter path, then there
-    // is a cycle.
-    for (int i = 0; i < E; i++)
-    {
-        int u = g->edges[i]->v1;
-        int v = g->edges[i]->v2;
-        int weight = g->edges[i]->weight;
-        if (dist[u] != 10000 && dist[v] != 10000 && dist[u] + weight < dist[v])
-            cout<<"\n\t\t\tGRAPHER: Graph contains negative weight cycle\n";
-    } 
-    */
-    //printArr(dist); 
-    //printArr();
     cout<<"\nRouting table regenerated.\n";
     cout<<"\n----------------------------------------------------------------------------------\n";
     writeDVInfo();
@@ -762,7 +728,10 @@ void writeDVInfo() {
         newFile<<"ROUTER SHORTEST_DISTANCE PREV_NODE\n";
         for(int i = 0; i<MAX_ROUTERS; i++){
             if(dvinfo[i].node!=-1) {
-                newFile << dvinfo[i].node<<"\t\t\t"<< dvinfo[i].shortestDist << "\t\t\t\t" << dvinfo[i].nextNode << "\n";
+                if(dvinfo[i].node == router1.src)
+                    newFile << dvinfo[i].node<<"\t\t\t"<< dvinfo[i].shortestDist << "\t\t\t\t*\n";
+                else
+                    newFile << dvinfo[i].node<<"\t\t\t"<< dvinfo[i].shortestDist << "\t\t\t\t" << dvinfo[i].nextNode << "\n";
             }
         }
     }

@@ -1,7 +1,9 @@
 ROUTER SHORTEST_DISTANCE PREV_NODE
 A			1				E
 B			2				E
-C			5				B
-D			7				C
+C			4				F
+D			6				F
 E			0				ÿ
-F			10000				ÿ
+F			3				E
+G			10000				ÿ
+H			10000				ÿ
